@@ -161,29 +161,51 @@ qed
 
 subsection \<open>Membership\<close>
 
-function (sequential) member :: "pvEB \<Rightarrow> nat \<Rightarrow> bool" where
+function (domintros, sequential) member :: "pvEB \<Rightarrow> nat \<Rightarrow> bool" where
   "member (Leaf bs) i = bs!i"
 | "member (Node u _ cs) i = member (cs!(high i u)) (low i u)"
   by pat_completeness auto
-termination member
-  sorry
 
-lemma member_list_pvEB:
+lemma member_termination:
+  assumes "invar pvEB" "i < universe pvEB"
+  shows "member_dom (pvEB, i)"
+  using assms
+proof (induction pvEB arbitrary: i)
+  case (Leaf bs)
+  thus ?case 
+    by (simp add: member.domintros(1))
+next
+  case (Node u s cs)
+  have 0: "cs!(high i u) \<in> set cs" "invar (cs!(high i u))"
+    using Node.prems(1,2) high_elem_clusters by auto
+  hence 1: "low i u < universe (cs!(high i u))"
+    using low_lt_universe_high Node.prems(1,2) by blast
+  have "member_dom (cs!(high i u), low i u)"
+    using Node.IH(2)[OF 0 1] by blast
+  thus ?case
+    by (simp add: member.domintros(2))
+qed
+
+lemma member_list_pvEB_nth:
   assumes "invar pvEB" "i < universe pvEB"
   shows "member pvEB i \<longleftrightarrow> list_pvEB pvEB ! i"
   using assms
 proof (induction pvEB arbitrary: i)
+  case (Leaf bs)
+  thus ?case
+    by (simp add: member.domintros(1) member.psimps(1))
+next
   case (Node u s cs)
   have 0: "cs!(high i u) \<in> set cs" "invar (cs!(high i u))"
     using Node.prems(1,2) high_elem_clusters by auto
   hence 1: "low i u < universe (cs!(high i u))"
     using low_lt_universe_high Node.prems(1,2) by blast
   have "member (Node u s cs) i = list_pvEB (cs!(high i u)) ! (low i u)"
-    using Node(2)[OF 0 1] by simp
+    using Node(2)[OF 0 1] Node.prems member.psimps(2) member_termination by blast
   also have "... = list_pvEB (Node u s cs) ! i"
     using Node.prems(1,2) list_pvEB_i_high_low by blast
   finally show ?case .
-qed simp
+qed
 
 subsection \<open>Insert\<close>
 
