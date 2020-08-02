@@ -96,7 +96,7 @@ fun invar :: "pvEB \<Rightarrow> bool" where
   "invar (Leaf bs) \<longleftrightarrow> length bs = 2"
 | "invar (Node u s cs) \<longleftrightarrow> invar s \<and> (\<forall>c \<in> set cs. invar c) \<and> (\<exists>k > 1. u = 2^k) \<and> 
     universe s = sqrt\<up> u \<and> length cs = sqrt\<up> u \<and> (\<forall>c \<in> set cs. universe c = sqrt\<down> u) \<and>
-    (\<forall>i. (list_pvEB s ! i \<longleftrightarrow> (\<exists>j. list_pvEB (cs!i) ! j)))"
+    (\<forall>i < sqrt\<up> u. (list_pvEB s ! i \<longleftrightarrow> (\<exists>j < sqrt\<down> u. list_pvEB (cs!i) ! j)))"
 
 subsection \<open>Auxiliary Lemmas\<close>
 
@@ -105,12 +105,17 @@ lemma universe_2powk:
   by (cases pvEB) auto
 
 lemma low_lt_universe_high:
-  assumes "invar pvEB" "pvEB = Node u s cs" "i < universe pvEB"
+  assumes "invar pvEB" "i < universe pvEB" "pvEB = Node u s cs"
   shows "low i u < universe (cs!(high i u))"
   unfolding high_def low_def using assms less_mult_imp_div_less sqrt_ceiling_floor_id sqrt_floor_div2 by auto
 
+lemma high_lt_universe_summary:
+  assumes "invar pvEB" "i < universe pvEB" "pvEB = Node u s cs"
+  shows "high i u < universe s"
+  unfolding high_def using assms less_mult_imp_div_less sqrt_ceiling_floor_id by auto
+
 lemma high_elem_clusters:
-  assumes "invar pvEB" "pvEB = Node u s cs" "i < universe pvEB"
+  assumes "invar pvEB" "i < universe pvEB" "pvEB = Node u s cs"
   shows "cs!(high i u) \<in> set cs"
   unfolding high_def using assms less_mult_imp_div_less sqrt_ceiling_floor_id by auto
 
@@ -139,6 +144,31 @@ lemma concat_i_div_mod:
   assumes "\<forall>xs \<in> set xss. length xs = k" "0 < k" "n = length xss" "i < n * k"
   shows "concat xss ! i = (xss!(i div k)) ! (i mod k)"
   using assms by (induction xss arbitrary: i n) (auto simp: nth_append div_if mod_geq)
+
+lemma AUX: (* TODO *)
+  assumes "\<forall>xs \<in> set xss. length xs = k" "0 < k" "n = length xss" "i < n * k"
+  shows "(concat xss)[i := x] = concat (xss[i div k := (xss!(i div k))[i mod k := x]])"
+  using assms
+proof (induction xss arbitrary: i n)
+  case (Cons xs xss)
+  then show ?case
+  proof (cases "i < k")
+    case True
+    then show ?thesis
+      using Cons apply (auto)
+      by (simp add: list_update_append1)
+  next
+    case False
+    thm Cons
+    have "(concat xss)[i - k := x] = concat (xss[(i - k) div k := (xss ! ((i - k) div k))[(i - k) mod k := x]])"
+      using Cons.IH[of "n-k" "i-k"]
+      by (metis False One_nat_def assms(2) insert_iff less_diff_conv2 linorder_not_less list.set(2) list.size(4) local.Cons(1) local.Cons(2) local.Cons(4) local.Cons(5) mult.left_neutral nat_distrib(1))
+    then show ?thesis
+      apply (auto split: nat.split)
+      using Euclidean_Division.div_eq_0_iff False assms(2) apply blast
+      by (simp add: Cons.prems(1) False assms(2) div_geq list_update_append mod_geq)
+  qed
+qed simp
 
 lemma list_pvEB_i_high_low:
   assumes "invar pvEB" "pvEB = Node u s cs" "i < universe pvEB"
@@ -208,6 +238,80 @@ next
 qed
 
 subsection \<open>Insert\<close>
+
+function (sequential) insert :: "pvEB \<Rightarrow> nat \<Rightarrow> pvEB" where
+  "insert (Leaf bs) i = Leaf (bs[i := True])"
+| "insert (Node u s cs) i = (
+    let h = high i u in
+    let l = low i u in
+    Node u (insert s h) (cs[h := insert (cs!h) l]))"
+  by pat_completeness auto
+termination insert
+  sorry (* TODO *)
+
+lemma insert_universe:
+  "invar pvEB \<Longrightarrow> universe (insert pvEB i) = universe pvEB"
+  by (induction pvEB arbitrary: i) (auto simp: Let_def)
+
+lemma insert_update: (* TODO *)
+  assumes "invar pvEB" "i < universe pvEB"
+  shows "list_pvEB (insert pvEB i) = (list_pvEB pvEB)[i := True]"
+  using assms
+proof (induction pvEB arbitrary: i)
+  case (Leaf bs)
+  thus ?case
+    by simp
+next
+  case (Node u s cs)
+  define h where "h = high i u"
+  define l where "l = low i u"
+  note defs = h_def l_def
+  have IH: "list_pvEB (insert (cs!h) l) = (list_pvEB (cs!h))[l := True]"
+    using high_elem_clusters[OF Node.prems] low_lt_universe_high[OF Node.prems] Node.prems Node.IH(2) defs by simp
+  have 0: "\<forall>c \<in> set (map list_pvEB cs). length c = sqrt\<down> u"
+    using Node.prems(1) length_list_pvEB_universe by auto
+  have 1: "0 < sqrt\<down> u"
+    by (simp add: sqrt_floor_def)
+  have 2: "sqrt\<up> u = length (map list_pvEB cs)"
+    using Node.prems(1) by auto
+
+  have "list_pvEB (insert (Node u s cs) i) = concat (map list_pvEB (cs[h := insert (cs!h) l]))"
+    using defs by (auto simp: Let_def)
+  also have "... = concat ((map list_pvEB cs)[h := list_pvEB (insert (cs!h) l)])"
+    by (simp add: map_update)
+  also have "... = concat ((map list_pvEB cs)[h := (list_pvEB (cs!h))[l := True]])"
+    using IH by argo
+  also have "... = (concat (map list_pvEB cs))[i := True]"
+    using AUX[OF 0 1 2] Node.prems(1,2) defs high_def low_def high_lt_universe_summary sqrt_ceiling_floor_id by auto
+  also have "... = (list_pvEB (Node u s cs))[i := True]"
+    by simp
+  finally show ?case .
+qed
+
+lemma insert_invar:
+  assumes "invar pvEB" "i < universe pvEB"
+  shows "invar (insert pvEB i)"
+  using assms
+proof (induction pvEB arbitrary: i)
+  case (Leaf bs)
+  thus ?case
+    by simp
+next
+  case (Node u s cs)
+  define h where "h = high i u"
+  define l where "l = low i u"
+  note defs = h_def l_def
+  have "invar (insert s h)"
+    using Node.prems Node.IH(1) high_lt_universe_summary defs by auto
+  moreover have "invar (insert (cs!h) l)"
+    using high_elem_clusters[OF Node.prems] low_lt_universe_high[OF Node.prems] Node.prems Node.IH(2) defs by simp
+  ultimately show ?case (* TODO *)
+    using defs Node.prems(1) apply (auto simp: Let_def insert_universe)
+    using set_update_subset_insert apply fastforce
+      apply (metis in_set_conv_nth insert_universe length_list_update nth_list_update_eq nth_list_update_neq)
+     apply (metis Node.prems(1) Node.prems(2) high_elem_clusters high_lt_universe_summary insert_update length_list_pvEB_universe low_lt_universe_high nth_list_update)
+    by (metis Node.prems(1) Node.prems(2) high_lt_universe_summary insert_update length_list_pvEB_universe nth_list_update)
+qed
 
 subsection \<open>Minimum and Maximum\<close>
 
