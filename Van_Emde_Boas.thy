@@ -69,17 +69,33 @@ proof -
 qed
 
 definition high :: "nat \<Rightarrow> nat \<Rightarrow> nat" where
-  "high x u = x div (sqrt\<down> u)"
+  "high i u = i div (sqrt\<down> u)"
 
 definition low :: "nat \<Rightarrow> nat \<Rightarrow> nat" where
-  "low x u = x mod (sqrt\<down> u)"
+  "low i u = i mod (sqrt\<down> u)"
 
 definition index :: "nat \<Rightarrow> nat \<Rightarrow> nat \<Rightarrow> nat" where
-  "index x y u = x * sqrt\<down> u + y"
+  "index i j u = i * sqrt\<down> u + j"
 
 lemma index_high_low:
-  "index (high x u) (low x u) u = x"
+  "index (high i u) (low i u) u = i"
   unfolding index_def high_def low_def by simp
+
+lemma high_mono:
+  "i \<le> j \<Longrightarrow> high i u \<le> high j u"
+  unfolding high_def using div_le_mono by blast
+
+lemma low_lt_sqrt_floor:
+  "low i u < sqrt\<down> u"
+  unfolding low_def sqrt_floor_def by simp
+
+lemma high_lt_k_if_sqrt_floor:
+  "i < k * sqrt\<down> u \<Longrightarrow> high i u < k"
+  using less_mult_imp_div_less unfolding high_def by blast
+
+lemma high_geq_if_index_low0:
+  "index i 0 u \<le> j \<Longrightarrow> i \<le> high j u"
+  unfolding index_def high_def sqrt_floor_def using nat_le_iff_add by auto
 
 lemma index_is_high_low:
   assumes "l < sqrt\<down> u" "i = index h l u"
@@ -87,15 +103,15 @@ lemma index_is_high_low:
   using assms unfolding index_def high_def low_def by auto
 
 lemma index_lt_u:
-  assumes "u = 2^k" "x < sqrt\<up> u" "y < sqrt\<down> u"
-  shows "index x y u < u"
+  assumes "u = 2^k" "i < sqrt\<up> u" "j < sqrt\<down> u"
+  shows "index i j u < u"
 proof -
   have 0: "sqrt\<down> u = 2^(k div 2)"
     by (simp add: assms(1) sqrt_floor_div2)
   show ?thesis
   proof (cases "even k")
     case True
-    have "index x y u \<le> (sqrt\<up> u - 1) * sqrt\<down> u + y"
+    have "index i j u \<le> (sqrt\<up> u - 1) * sqrt\<down> u + j"
       using assms(2) index_def by auto
     also have "... \<le> (sqrt\<up> u - 1) * sqrt\<down> u + (sqrt\<down> u - 1)"
       using assms(3) by linarith
@@ -105,12 +121,12 @@ proof -
       by (simp add: add.commute mult_eq_if power_add)
     also have "... = u - 1"
       using True assms(1) by (metis even_two_times_div_two mult_2)
-    finally have "index x y u \<le> u - 1" .
+    finally have "index i j u \<le> u - 1" .
     thus ?thesis
       using assms(1) by (simp add: Nat.le_diff_conv2)
   next
     case False
-    have "index x y u \<le> (sqrt\<up> u - 1) * sqrt\<down> u + y"
+    have "index i j u \<le> (sqrt\<up> u - 1) * sqrt\<down> u + j"
       using assms(2) index_def by auto
     also have "... \<le> (sqrt\<up> u - 1) * sqrt\<down> u + (sqrt\<down> u - 1)"
       using assms(3) by linarith
@@ -120,12 +136,11 @@ proof -
       by (simp add: add.commute mult_eq_if)
     also have "... = u - 1"
       using False assms(1) 0 odd_sqrt_ceiling_div2_add1 sqrt_ceiling_floor_id by force
-    finally have "index x y u \<le> u - 1" .
+    finally have "index i j u \<le> u - 1" .
     thus ?thesis
       using assms(1) by (simp add: Nat.le_diff_conv2)
   qed
 qed
-
 
 section \<open>Proto van Emde Boas Tree\<close>
 
@@ -145,7 +160,7 @@ fun invar :: "pvEB \<Rightarrow> bool" where
   "invar (Leaf bs) \<longleftrightarrow> length bs = 2"
 | "invar (Node u s cs) \<longleftrightarrow> invar s \<and> (\<forall>c \<in> set cs. invar c) \<and> (\<exists>k > 1. u = 2^k) \<and> 
     universe s = sqrt\<up> u \<and> length cs = sqrt\<up> u \<and> (\<forall>c \<in> set cs. universe c = sqrt\<down> u) \<and>
-    (\<forall>i. (list_pvEB s ! i \<longleftrightarrow> (\<exists>j. list_pvEB (cs!i) ! j)))"
+    (\<forall>i < sqrt\<up> u. (list_pvEB s ! i \<longleftrightarrow> (\<exists>j < sqrt\<down> u. list_pvEB (cs!i) ! j)))"
 
 subsection \<open>Auxiliary Lemmas\<close>
 
@@ -168,10 +183,15 @@ lemma high_lt_universe_summary:
   shows "high i u < universe s"
   using high_def assms less_mult_imp_div_less sqrt_ceiling_floor_id by auto
 
+lemma high_low_sqrt_bound:
+  assumes "invar pvEB" "i < universe pvEB" "pvEB = Node u s cs"
+  shows "high i u < sqrt\<up> u" "low i u < sqrt\<down> u"
+    using assms high_lt_universe_summary by (auto simp add: low_def sqrt_floor_def)
+
 lemma high_in_clusters:
   assumes "invar pvEB" "i < universe pvEB" "pvEB = Node u s cs"
   shows "cs!(high i u) \<in> set cs"
-  using high_def assms less_mult_imp_div_less sqrt_ceiling_floor_id by auto
+  using high_def assms high_low_sqrt_bound(1) by auto
 
 lemma length_list_pvEB_universe:
   "invar pvEB \<Longrightarrow> length (list_pvEB pvEB) = universe pvEB"
@@ -189,12 +209,25 @@ proof (induction pvEB)
     using Node.prems sqrt_ceiling_floor_id by auto
 qed simp
 
-lemma concat_nth_div_mod:
-  assumes "\<forall>xs \<in> set xss. length xs = k" "0 < k" "n = length xss" "i < n * k"
-  shows "concat xss ! i = (xss!(i div k)) ! (i mod k)"
-  using assms 
-  by (induction xss arbitrary: i n) 
-     (auto simp: nth_append div_geq mod_geq)
+lemma concat_nth_offset:
+  assumes "\<forall>xs \<in> set xss. length xs = k" "0 < k" "n = length xss" "i < n" "j < k"
+  shows "concat xss ! (i * k + j) = (xss!i) ! j"
+  using assms
+proof (induction xss arbitrary: i n)
+  case (Cons xs xss)
+  show ?case
+  proof (cases "i = 0")
+    case True
+    thus ?thesis
+      using Cons.prems by (auto simp: nth_append)
+  next
+    case False
+    have "concat (xs # xss) ! (i * k + j) = concat xss ! ((i-1) * k + j)"
+      using False Cons.prems nth_append_length_plus[of xs "concat xss"] by (simp add: add.assoc mult_eq_if)
+    thus ?thesis
+      using False Cons by simp
+  qed
+qed simp
 
 lemma concat_update_div_mod:
   assumes "\<forall>xs \<in> set xss. length xs = k" "0 < k" "n = length xss" "i < n * k"
@@ -203,24 +236,28 @@ lemma concat_update_div_mod:
   by (induction xss arbitrary: i n) 
      (auto simp: list_update_append div_geq mod_geq)
 
-lemma list_pvEB_nth_clusters_high_low:
-  assumes "invar pvEB" "pvEB = Node u s cs" "i < universe pvEB"
-  shows "list_pvEB pvEB ! i = list_pvEB (cs!(high i u)) ! (low i u)"
+lemma list_pvEB_nth_index:
+  assumes "invar pvEB" "i < sqrt\<up> u" "j < sqrt\<down> u" "pvEB = Node u s cs"
+  shows "list_pvEB pvEB ! index i j u = list_pvEB (cs!i) ! j"
 proof -
   have 0: "\<forall>c \<in> set (map list_pvEB cs). length c = sqrt\<down> u"
-    using assms(1,2) length_list_pvEB_universe by auto
+    using assms(1,4) length_list_pvEB_universe by auto
   have 1: "0 < sqrt\<down> u"
     by (simp add: sqrt_floor_def)
   have 2: "sqrt\<up> u = length (map list_pvEB cs)"
-    using assms(1,2) by simp
-  have "universe pvEB = sqrt\<up> u * sqrt\<down> u"
-    using assms(1,2) sqrt_ceiling_floor_id by auto
-  hence "concat (map list_pvEB cs) ! i = ((map list_pvEB cs)!(i div (sqrt\<down> u))) ! (i mod (sqrt\<down> u))"
-    using concat_nth_div_mod[OF 0 1 2] assms(3) by simp
-  thus ?thesis
-    unfolding high_def low_def
-    using \<open>universe pvEB = sqrt\<up> u * sqrt\<down> u\<close> assms less_mult_imp_div_less by simp
+    using assms(1,4) by simp
+  have "list_pvEB pvEB ! index i j u = concat (map list_pvEB cs) ! index i j u"
+    by (simp add: assms(4))
+  also have "... = ((map list_pvEB cs) ! i) ! j"
+    using concat_nth_offset[OF 0 1 2 assms(2) assms(3)] index_def by simp
+  finally show ?thesis
+    using 2 assms(2) by auto
 qed
+
+corollary list_pvEB_nth_high_low:
+  assumes "invar pvEB" "i < universe pvEB" "pvEB = Node u s cs" 
+  shows "list_pvEB pvEB ! i = list_pvEB (cs!(high i u)) ! (low i u)"
+  using list_pvEB_nth_index high_low_sqrt_bound index_high_low assms by metis
 
 subsection \<open>Membership \<O>(lg lg u)\<close>
 
@@ -260,7 +297,7 @@ proof (induction pvEB arbitrary: i)
   have "member (Node u s cs) i = list_pvEB (cs!(high i u)) ! (low i u)"
     using Node(2)[OF 0 1] Node.prems member.psimps(2) member_termination by blast
   also have "... = list_pvEB (Node u s cs) ! i"
-    using Node.prems(1,2) list_pvEB_nth_clusters_high_low by blast
+    using Node.prems(1,2) list_pvEB_nth_high_low by blast
   finally show ?case .
 qed simp
 
@@ -358,10 +395,10 @@ proof (induction pvEB arbitrary: i)
     using insert_update[OF IHs] defs 1 3 Node.prems(1) insert_update length_list_pvEB_universe by auto
   moreover have "list_pvEB ((cs[h := insert (cs!h) l])!h) ! l"
     using 1 2 3 4 insert_update IHcs(2) Node.prems(1) length_list_pvEB_universe by auto
-  moreover have "\<forall>i \<noteq> h. (list_pvEB (insert s h) ! i \<longleftrightarrow> (\<exists>j. list_pvEB ((cs[h := insert (cs!h) l])!i) ! j))"
+  moreover have "\<forall>i < sqrt\<up> u. i \<noteq> h \<longrightarrow> (list_pvEB (insert s h) ! i \<longleftrightarrow> (\<exists>j < sqrt\<down> u. list_pvEB ((cs[h := insert (cs!h) l])!i) ! j))"
     using 1 3 Node.prems(1) insert_update by auto
-  ultimately have "\<forall>i. (list_pvEB (insert s h) ! i \<longleftrightarrow> (\<exists>j. list_pvEB ((cs[h := insert (cs!h) l])!i) ! j))"
-    by fast
+  ultimately have "\<forall>i < sqrt\<up> u. (list_pvEB (insert s h) ! i \<longleftrightarrow> (\<exists>j < sqrt\<down> u. list_pvEB ((cs[h := insert (cs!h) l])!i) ! j))"
+    using IHcs(2) 4 by metis
 
   hence "invar (Node u (insert s h) (cs[h := insert (cs!h) l]))"
     using 0 IHs 1 2 Node.prems(1) by auto
@@ -414,7 +451,7 @@ proof (induction pvEB arbitrary: i)
     hence "h = high i u" "l = low i u"
       using index_is_high_low defs Node.prems(2) by (auto split: option.splits)
     hence "list_pvEB (Node u s cs) ! i = list_pvEB (cs!h) ! l"
-      using list_pvEB_nth_clusters_high_low Node.prems minimum_universe by blast
+      using list_pvEB_nth_high_low Node.prems minimum_universe by blast
     thus ?thesis
       using defs 0 Node.IH(2) Node.prems(1) by simp
   next
@@ -424,18 +461,11 @@ proof (induction pvEB arbitrary: i)
   qed
 qed (auto split: if_splits)
 
-lemma AUX:
-  assumes "invar pvEB" "pvEB = Node u s cs" "i < universe pvEB" "j < low i u"
-  shows "list_pvEB pvEB ! index (high i u) j u = list_pvEB (cs!(high i u)) ! j"
+lemma minimum_Some_not_list_pvEb_nth:
+  assumes "invar pvEB" "Some m = minimum pvEB" "i < m"
+  shows "\<not> list_pvEB pvEB ! i"
   using assms
-  sorry
-  (* by (smt Suc_leI high_in_clusters high_lt_universe_summary index_is_high_low(1) index_is_high_low(2) index_lt_u invar.simps(2) length_list_pvEB_universe list_pvEB_nth_clusters_high_low low_lt_universe_high_clusters of_nat_1 of_nat_add of_nat_le_iff of_nat_less_iff plus_1_eq_Suc universe.simps(2) universe_2powk) *)
-
-lemma B: (* TODO *)
-  assumes "invar pvEB" "Some i = minimum pvEB"
-  shows "\<forall>j < i. \<not>(list_pvEB pvEB ! j)"
-  using assms
-proof (induction pvEB arbitrary: i)
+proof (induction pvEB arbitrary: m i)
   case (Node u s cs)
   show ?case
   proof (cases "\<exists>h l. Some h = minimum s \<and> Some l = minimum (cs!h)")
@@ -443,42 +473,45 @@ proof (induction pvEB arbitrary: i)
     then obtain h l where defs: "Some h = minimum s" "Some l = minimum (cs!h)"
       by blast
 
-    have 0: "cs!h \<in> set cs"
-      using minimum_universe[OF _ defs(1)] Node.prems(1) by auto
-    hence "l < sqrt\<down> u"
+    have 0: "h < sqrt\<up> u"
+      using minimum_universe[OF _ defs(1)] Node.prems(1) by auto     
+    hence 1: "l < sqrt\<down> u"
       using minimum_universe[OF _ defs(2)] Node.prems(1) by auto
-    hence *: "h = high i u" "l = low i u"
+    hence *: "h = high m u" "l = low m u"
       using index_is_high_low defs Node.prems(2) by (auto split: option.splits)
 
-    have "\<forall>j < h. \<not> list_pvEB s ! j"
-      using Node.IH(1) Node.prems(1) defs by simp
-
-    hence "\<forall>i < h. \<forall>j. \<not> list_pvEB (cs!i) ! j"
-      using Node.prems(1) by auto
-
-    hence "\<forall>j < index h 0 u. \<not> list_pvEB (Node u s cs) ! j"
-      sorry
-      (* by (smt Node.prems(1) True \<open>\<forall>j<h. \<not> list_pvEB s ! j\<close> add.right_neutral dual_order.strict_trans high_def index_def index_lt_u invar.simps(2) length_list_pvEB_universe less_mult_imp_div_less linorder_neqE_nat list_pvEB_nth_clusters_high_low minimum_Some_list_pvEB_nth minimum_universe nat_zero_less_power_iff pos2 sqrt_floor_div2 universe.simps(2)) *)
-    hence 1: "\<forall>j < index (high i u) 0 u. \<not> list_pvEB (Node u s cs) ! j"
-      using * by blast
-
-    (* list_pvEB pvEB ! i = list_pvEB (cs!(high i u)) ! (low i u) *)
-    have "\<forall>j < l. \<not> list_pvEB (cs!h) ! j"
-      using Node.IH(2)[OF 0 _ defs(2)] 0 Node.prems(1) by simp
-    hence "\<forall>j < low i u. \<not> list_pvEB (cs!high i u) ! j"
-      using * by blast
-    hence "\<forall>j < low i u. \<not> list_pvEB (Node u s cs) ! index (high i u) j u"
-      using AUX Node.prems minimum_universe by blast
-    hence 2: "\<forall>j \<in> set [index (high i u) 0 u..<index (high i u) (low i u) u]. \<not> list_pvEB (Node u s cs) ! j"
-      sorry      
-      (* by (smt "*"(2) add.right_neutral add_diff_cancel_left' in_set_conv_nth index_def length_upt less_imp_of_nat_less nth_upt of_nat_add of_nat_less_imp_less) *)
-
-    have "\<forall>j \<in> set [0..<index (high i u) (low i u) u]. \<not> list_pvEB (Node u s cs) ! j"
-      using 1 2 by auto
-
-    thus ?thesis
-      using index_high_low by simp
-
+    show ?thesis
+    proof (cases "i < index h 0 u")
+      case True
+      have A: "i = index (high i u) (low i u) u"
+        using index_high_low by simp
+      have B: "high i u < h"
+        using True high_lt_k_if_sqrt_floor index_def by auto
+      have C: "low i u < sqrt\<down> u"
+        by (simp add: low_lt_sqrt_floor)
+      have "\<forall>j < h. \<not> list_pvEB s ! j"
+        using Node.IH(1) Node.prems(1) defs by simp
+      hence "\<forall>i < h. \<forall>j < sqrt\<down> u. \<not> list_pvEB (cs!i) ! j"
+        using Node.prems(1) *(1) 0 by simp
+      hence "\<forall>i < h. \<forall>j < sqrt\<down> u. \<not> list_pvEB (Node u s cs) ! index i j u"
+        using list_pvEB_nth_index 0 Node.prems(1) by auto
+      thus ?thesis
+        using A B C by metis
+    next
+      case False
+      have "h = high i u"
+        using False Node.prems(3) *(1) high_geq_if_index_low0 high_mono by (simp add: dual_order.antisym)
+      hence A: "i = index h (low i u) u"
+        by (simp add: index_high_low)
+      hence B: "low i u < l"
+        using * Node.prems(3) by (metis index_def index_high_low nat_add_left_cancel_less)
+      have "\<forall>j < l. \<not> list_pvEB (cs!h) ! j"
+        using Node.IH(2)[OF _ _ defs(2)] 0 Node.prems(1) by simp
+      hence "\<forall>j < l. \<not> list_pvEB (Node u s cs) ! index h j u"
+        using 0 1 Node.prems(1) list_pvEB_nth_index by auto
+      then show ?thesis
+        using A B by auto
+    qed
   next
     case False
     thus ?thesis
@@ -487,14 +520,15 @@ proof (induction pvEB arbitrary: i)
 qed (auto split: if_splits)
 
 lemma C: (* TODO *)
-  assumes "invar pvEB" "None = minimum pvEB"
-  shows "\<forall>i < universe pvEB. \<not>(list_pvEB pvEB ! i)"
+  assumes "invar pvEB" "None = minimum pvEB" "i < universe pvEB"
+  shows "\<not> list_pvEB pvEB ! i"
   sorry
 
 lemma minimum_arg_min:
   assumes "invar pvEB" "Some i = minimum pvEB"
   shows "i = arg_min id (nth (list_pvEB pvEB))"
-  using assms minimum_Some_list_pvEB_nth B arg_min_nat_lemma by (metis id_apply le_neq_implies_less)
+  using assms minimum_Some_list_pvEB_nth minimum_Some_not_list_pvEb_nth arg_min_nat_lemma 
+  by (metis id_apply le_neq_implies_less)
 
 subsection \<open>Predecessor and Successor\<close>
 
