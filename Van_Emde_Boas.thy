@@ -164,15 +164,6 @@ fun invar :: "pvEB \<Rightarrow> bool" where
 
 subsection \<open>Auxiliary Lemmas\<close>
 
-lemma universe_2powk:
-  "invar pvEB \<Longrightarrow> \<exists>k \<ge> 1. universe pvEB = 2^k"
-  by (cases pvEB) auto
-
-lemma clusters_universe_div2:
-  assumes "invar pvEB" "pvEB = Node (2^k) s cs"
-  shows "\<forall>c \<in> set cs. universe c = 2^(k div 2)"
-  using assms sqrt_floor_div2 by (auto)
-
 lemma low_lt_universe_high_clusters:
   assumes "invar pvEB" "i < universe pvEB" "pvEB = Node u s cs"
   shows "low i u < universe (cs!(high i u))"
@@ -427,15 +418,11 @@ function (domintros, sequential) minimum :: "pvEB \<Rightarrow> nat option" wher
 
 declare minimum.domintros[simp] minimum.psimps[simp]
 
-lemma minimum_termination_aux:
+lemma minimum_termination_universe:
   assumes "invar pvEB"
   shows "minimum_dom pvEB \<and> (Some m = minimum pvEB \<longrightarrow> m < universe pvEB)"
   using assms
 proof (induction pvEB arbitrary: m)
-  case (Leaf bs)
-  thus ?case 
-    by (auto split: if_splits)
-next
   case (Node u s cs)
   show ?case
   proof (cases "\<exists>h. Some h = minimum s")
@@ -475,19 +462,19 @@ next
     thus ?thesis
       using 0 by simp
   qed
-qed
+qed (auto split: if_splits)
 
 corollary minimum_termination:
   assumes "invar pvEB"
   shows "minimum_dom pvEB"
-  using assms minimum_termination_aux by blast
+  using assms minimum_termination_universe by blast
 
 corollary minimum_universe:
   assumes "invar pvEB" "Some m = minimum pvEB"
   shows "m < universe pvEB"
-  using assms minimum_termination_aux by blast
+  using assms minimum_termination_universe by blast
 
-lemma minimum_Some_list_pvEB_nth:
+lemma minimum_Some_nth:
   assumes "invar pvEB" "Some m = minimum pvEB"
   shows "list_pvEB pvEB ! m"
   using assms
@@ -517,7 +504,7 @@ proof (induction pvEB arbitrary: m)
   qed
 qed (auto split: if_splits)
 
-lemma minimum_Some_not_list_pvEb_nth:
+lemma minimum_Some_not_nth:
   assumes "invar pvEB" "Some m = minimum pvEB" "i < m"
   shows "\<not> list_pvEB pvEB ! i"
   using assms
@@ -577,16 +564,46 @@ proof (induction pvEB arbitrary: m i)
   qed
 qed (auto split: if_splits)
 
-lemma C: (* TODO *)
-  assumes "invar pvEB" "i < universe pvEB"
-  shows "(None = minimum pvEB) \<longleftrightarrow> (\<not> list_pvEB pvEB ! i)"
-  sorry
-
 corollary minimum_arg_min:
   assumes "invar pvEB" "Some m = minimum pvEB"
   shows "m = arg_min id (nth (list_pvEB pvEB))"
-  using assms minimum_Some_list_pvEB_nth minimum_Some_not_list_pvEb_nth arg_min_nat_lemma 
+  using assms minimum_Some_nth minimum_Some_not_nth arg_min_nat_lemma 
   by (metis id_apply le_neq_implies_less)
+
+lemma minimum_None_empty:
+  assumes "invar pvEB"
+  shows "(None = minimum pvEB) \<longleftrightarrow> (\<forall>i < universe pvEB. \<not> list_pvEB pvEB ! i)"
+proof standard
+  assume "None = minimum pvEB"
+  thus "\<forall>i < universe pvEB. \<not> list_pvEB pvEB ! i" using assms
+  proof (induction pvEB)
+    case (Node u s cs)
+    have "minimum_dom (Node u s cs)"
+      using Node.prems(2) minimum_termination by blast
+    thus ?case
+      using Node 
+      apply (auto simp del: list_pvEB.simps split: option.splits)
+      subgoal premises prems for k i
+      proof -
+        thm prems
+        have "list_pvEB (Node u s cs) ! i = list_pvEB (cs!high i u) ! low i u"
+          using list_pvEB_nth_high_low[OF Node.prems(2)] prems(12,13) universe.simps(2) by presburger
+        thus ?thesis
+          using high_low_sqrt_bound[OF Node.prems(2)] prems(2,12-14) by auto
+      qed
+      using minimum_Some_nth minimum_universe by force
+  qed (auto simp: less_2_cases_iff split: if_splits)
+next
+  assume *: "\<forall>i < universe pvEB. \<not> list_pvEB pvEB ! i"
+  show "None = minimum pvEB"
+  proof (rule ccontr)
+    assume "\<not> None = minimum pvEB"
+    then obtain m where "Some m = minimum pvEB" "m < universe pvEB" "list_pvEB pvEB ! m"
+      using minimum_Some_nth minimum_universe assms not_Some_eq by metis
+    thus False
+      using * by blast
+  qed
+qed
 
 subsection \<open>Predecessor and Successor\<close>
 
