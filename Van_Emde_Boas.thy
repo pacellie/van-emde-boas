@@ -232,7 +232,7 @@ qed simp
 lemma concat_update_div_mod:
   assumes "\<forall>xs \<in> set xss. length xs = k" "0 < k" "n = length xss" "i < n * k"
   shows "(concat xss)[i := x] = concat (xss[i div k := (xss!(i div k))[i mod k := x]])"
-  using assms 
+  using assms
   by (induction xss arbitrary: i n) 
      (auto simp: list_update_append div_geq mod_geq)
 
@@ -408,7 +408,7 @@ qed simp
 
 subsection \<open>Minimum and Maximum\<close>
 
-function (sequential) minimum :: "pvEB \<Rightarrow> nat option" where
+function (domintros, sequential) minimum :: "pvEB \<Rightarrow> nat option" where
   "minimum (Leaf bs) = (
     if bs!0 then Some 0
     else if bs!1 then Some 1
@@ -424,21 +424,77 @@ function (sequential) minimum :: "pvEB \<Rightarrow> nat option" where
     | None \<Rightarrow> None
   )"
   by pat_completeness auto
-termination minimum sorry (* TODO *)
 
-lemma minimum_universe:
-  assumes "invar pvEB" "Some i = minimum pvEB"
-  shows "i < universe pvEB"
-  using assms index_lt_u
-  by (induction pvEB arbitrary: i)
-     (auto simp: split: if_splits option.splits, metis nth_mem)
+declare minimum.domintros[simp] minimum.psimps[simp]
+
+lemma minimum_termination_aux:
+  assumes "invar pvEB"
+  shows "minimum_dom pvEB \<and> (Some m = minimum pvEB \<longrightarrow> m < universe pvEB)"
+  using assms
+proof (induction pvEB arbitrary: m)
+  case (Leaf bs)
+  thus ?case 
+    by (auto split: if_splits)
+next
+  case (Node u s cs)
+  show ?case
+  proof (cases "\<exists>h. Some h = minimum s")
+    case True
+    then obtain h where h_def: "Some h = minimum s"
+      by blast
+    hence *: "minimum_dom s" "h < universe s"
+      using Node.prems Node.IH(1) by simp_all
+    have "\<And>h'. minimum s = Some h' \<Longrightarrow> minimum_dom (cs ! h')"
+    proof -
+      fix h'
+      assume "minimum s = Some h'"
+      thus "minimum_dom (cs!h')"
+        using h_def Node.prems Node.IH(2) *(2) by simp
+    qed
+    hence dom: "minimum_dom (Node u s cs)"
+      using *(1) by simp
+    show ?thesis
+    proof cases
+      assume "\<exists>l. Some l = minimum (cs!h)"
+      hence "(Some m = minimum (Node u s cs) \<longrightarrow> m < universe (Node u s cs))"
+        using Node.IH(2) Node.prems True h_def *(2) dom index_lt_u 
+        by (auto split: option.splits, metis nth_mem)
+      thus ?thesis using True h_def Node
+        using dom by blast
+    next
+      assume "\<not>(\<exists>l. Some l = minimum (cs!h))"
+      thus ?thesis
+        using dom h_def by (auto split: option.splits)
+    qed
+  next
+    case False
+    hence 0: "minimum_dom (Node u s cs)"
+      using False Node.IH(1) Node.prems by (auto, metis minimum.domintros(2)) 
+    hence "None = minimum (Node u s cs)"
+      using False by (auto split: option.splits)
+    thus ?thesis
+      using 0 by simp
+  qed
+qed
+
+corollary minimum_termination:
+  assumes "invar pvEB"
+  shows "minimum_dom pvEB"
+  using assms minimum_termination_aux by blast
+
+corollary minimum_universe:
+  assumes "invar pvEB" "Some m = minimum pvEB"
+  shows "m < universe pvEB"
+  using assms minimum_termination_aux by blast
 
 lemma minimum_Some_list_pvEB_nth:
-  assumes "invar pvEB" "Some i = minimum pvEB"
-  shows "list_pvEB pvEB ! i"
+  assumes "invar pvEB" "Some m = minimum pvEB"
+  shows "list_pvEB pvEB ! m"
   using assms
-proof (induction pvEB arbitrary: i)
+proof (induction pvEB arbitrary: m)
   case (Node u s cs)
+  have dom: "minimum_dom (Node u s cs)"
+    using Node.prems(1) minimum_termination by blast
   show ?case
   proof (cases "\<exists>h l. Some h = minimum s \<and> Some l = minimum (cs!h)")
     case True
@@ -448,16 +504,16 @@ proof (induction pvEB arbitrary: i)
       using minimum_universe[OF _ defs(1)] Node.prems(1) by auto
     hence "l < sqrt\<down> u"
       using minimum_universe[OF _ defs(2)] Node.prems(1) by auto
-    hence "h = high i u" "l = low i u"
-      using index_is_high_low defs Node.prems(2) by (auto split: option.splits)
-    hence "list_pvEB (Node u s cs) ! i = list_pvEB (cs!h) ! l"
+    hence "h = high m u" "l = low m u"
+      using index_is_high_low defs Node.prems(2) dom by (auto split: option.splits)
+    hence "list_pvEB (Node u s cs) ! m = list_pvEB (cs!h) ! l"
       using list_pvEB_nth_high_low Node.prems minimum_universe by blast
     thus ?thesis
       using defs 0 Node.IH(2) Node.prems(1) by simp
   next
     case False
     thus ?thesis
-      using Node.prems by (auto split: option.splits)
+      using Node.prems dom by (auto split: option.splits)
   qed
 qed (auto split: if_splits)
 
@@ -467,6 +523,8 @@ lemma minimum_Some_not_list_pvEb_nth:
   using assms
 proof (induction pvEB arbitrary: m i)
   case (Node u s cs)
+  have dom: "minimum_dom (Node u s cs)"
+    using Node.prems(1) minimum_termination by blast
   show ?case
   proof (cases "\<exists>h l. Some h = minimum s \<and> Some l = minimum (cs!h)")
     case True
@@ -478,7 +536,7 @@ proof (induction pvEB arbitrary: m i)
     hence 1: "l < sqrt\<down> u"
       using minimum_universe[OF _ defs(2)] Node.prems(1) by auto
     hence *: "h = high m u" "l = low m u"
-      using index_is_high_low defs Node.prems(2) by (auto split: option.splits)
+      using index_is_high_low defs Node.prems(2) dom by (auto split: option.splits)
 
     show ?thesis
     proof (cases "i < index h 0 u")
@@ -515,18 +573,18 @@ proof (induction pvEB arbitrary: m i)
   next
     case False
     thus ?thesis
-      using Node.prems by (auto split: option.splits)
+      using Node.prems dom by (auto split: option.splits)
   qed
 qed (auto split: if_splits)
 
 lemma C: (* TODO *)
-  assumes "invar pvEB" "None = minimum pvEB" "i < universe pvEB"
-  shows "\<not> list_pvEB pvEB ! i"
+  assumes "invar pvEB" "i < universe pvEB"
+  shows "(None = minimum pvEB) \<longleftrightarrow> (\<not> list_pvEB pvEB ! i)"
   sorry
 
-lemma minimum_arg_min:
-  assumes "invar pvEB" "Some i = minimum pvEB"
-  shows "i = arg_min id (nth (list_pvEB pvEB))"
+corollary minimum_arg_min:
+  assumes "invar pvEB" "Some m = minimum pvEB"
+  shows "m = arg_min id (nth (list_pvEB pvEB))"
   using assms minimum_Some_list_pvEB_nth minimum_Some_not_list_pvEb_nth arg_min_nat_lemma 
   by (metis id_apply le_neq_implies_less)
 
