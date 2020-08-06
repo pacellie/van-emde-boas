@@ -250,6 +250,45 @@ corollary list_pvEB_nth_high_low:
   shows "list_pvEB pvEB ! i = list_pvEB (cs!(high i u)) ! (low i u)"
   using list_pvEB_nth_index high_low_sqrt_bound index_high_low assms by metis
 
+subsection \<open>Build\<close> (* TODO *)
+
+function (sequential) build :: "nat \<Rightarrow> pvEB" where
+  "build u = (
+    if u = 2 then
+      Leaf (replicate 2 False)
+    else
+      Node u (build (sqrt\<up> u)) (replicate (sqrt\<up> u) (build (sqrt\<down> u)))
+  )"
+  by pat_completeness auto
+termination sorry
+
+lemma build_simps[simp]:
+  "u = 2 \<Longrightarrow> build u = Leaf (replicate 2 False)"
+  "u \<noteq> 2 \<Longrightarrow> build u = Node u (build (sqrt\<up> u)) (replicate (sqrt\<up> u) (build (sqrt\<down> u)))"
+  by simp_all
+
+lemma build_universe:
+  "universe (build u) = u"
+  by simp
+
+declare build.simps[simp del]
+
+lemma nat01_induct:
+  fixes n
+  assumes "P 0" "P 1" "\<And>n. 0 < n \<Longrightarrow> P n \<Longrightarrow> P (Suc n)"
+  shows "P n"
+  using assms nat_induct_non_zero by (metis gr0I)
+
+lemma build_empty:
+  assumes "u = 2^k" "0 < k" "i < u"
+  shows "\<not> list_pvEB (build u) ! i"
+  sorry
+
+lemma build_invar:
+  assumes "u = 2^k" "0 < k"
+  shows "invar (build u)"
+  sorry
+
 subsection \<open>Membership \<O>(lg lg u)\<close>
 
 function (domintros, sequential) member :: "pvEB \<Rightarrow> nat \<Rightarrow> bool" where
@@ -398,6 +437,8 @@ proof (induction pvEB arbitrary: i)
 qed simp
 
 subsection \<open>Minimum and Maximum\<close>
+
+subsubsection \<open>Minimum\<close>
 
 function (domintros, sequential) minimum :: "pvEB \<Rightarrow> nat option" where
   "minimum (Leaf bs) = (
@@ -564,11 +605,10 @@ proof (induction pvEB arbitrary: m i)
   qed
 qed (auto split: if_splits)
 
-corollary minimum_arg_min:
+corollary minimum_is_arg_min:
   assumes "invar pvEB" "Some m = minimum pvEB"
-  shows "m = arg_min id (nth (list_pvEB pvEB))"
-  using assms minimum_Some_nth minimum_Some_not_nth arg_min_nat_lemma 
-  by (metis id_apply le_neq_implies_less)
+  shows "is_arg_min id (nth (list_pvEB pvEB)) m"
+  unfolding is_arg_min_def using assms minimum_Some_nth minimum_Some_not_nth by (metis id_apply)
 
 lemma minimum_None_empty:
   assumes "invar pvEB"
@@ -605,10 +645,65 @@ next
   qed
 qed
 
+subsubsection \<open>Maximum\<close> (* TODO *)
+
 subsection \<open>Predecessor and Successor\<close>
 
-subsection \<open>Delete\<close>
+subsubsection \<open>Predecessor\<close> (* TODO *)
 
-subsection \<open>Build\<close>
+subsubsection \<open>Successor\<close> (* TODO *)
+
+function (sequential) successor :: "pvEB \<Rightarrow> nat \<Rightarrow> nat option" where
+  "successor (Leaf bs) i = (
+    if i = 0 \<and> bs!1 then Some 1
+    else None
+  )"
+| "successor (Node u s cs) i = (
+    case successor (cs!high i u) (low i u) of
+      Some offset \<Rightarrow> Some (index (high i u) offset u)
+    | None \<Rightarrow> (
+      case successor s (high i u) of
+        Some succ \<Rightarrow> (
+          case minimum (cs!succ) of
+            Some offset \<Rightarrow> Some (index succ offset u)
+          | None \<Rightarrow> None
+        )
+      | None \<Rightarrow> None
+    )
+  )"
+  by pat_completeness auto
+termination sorry (* TODO *)
+
+lemma A:
+  assumes "invar pvEB" "Some j = successor pvEB i" "i < universe pvEB"
+  shows "j < universe pvEB"
+  sorry
+
+lemma B:
+  assumes "invar pvEB" "Some j = successor pvEB i" "i < universe pvEB"
+  shows "i < j"
+  sorry
+
+lemma C:
+  assumes "invar pvEB" "Some j = successor pvEB i" "i < universe pvEB"
+  shows "list_pvEB pvEB ! j"
+  sorry
+
+lemma D:
+  assumes "invar pvEB" "Some j = successor pvEB i" "i < universe pvEB" "i < k" "k < j"
+  shows "\<not> list_pvEB pvEB ! k"
+  sorry
+
+corollary successor_is_arg_min:
+  assumes "invar pvEB" "Some j = successor pvEB i" "i < universe pvEB"
+  shows "is_arg_min id (\<lambda>j. list_pvEB pvEB ! j \<and> i < j \<and> (\<forall>k. i < k \<and> k < j \<longrightarrow> \<not> list_pvEB pvEB ! k)) j"
+  using assms B C D unfolding is_arg_min_def by (metis id_apply)
+
+lemma E:
+  assumes "invar pvEB" "i < universe pvEB"
+  shows "(None = successor pvEB i) \<longleftrightarrow> (\<forall>j < universe pvEB. i < j \<longrightarrow> \<not> list_pvEB pvEB ! j)"
+  sorry
+
+subsection \<open>Delete\<close> (* TODO *)
 
 end
