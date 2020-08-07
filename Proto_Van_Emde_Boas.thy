@@ -20,9 +20,16 @@ fun invar :: "pvEB \<Rightarrow> bool" where
   "invar (Leaf bs) \<longleftrightarrow> length bs = 2"
 | "invar (Node u s cs) \<longleftrightarrow> invar s \<and> (\<forall>c \<in> set cs. invar c \<and> uv c = sqrt\<down> u) \<and>
     (\<exists>k > 1. u = 2^k) \<and> length cs = sqrt\<up> u \<and> uv s = sqrt\<up> u \<and>
-    (\<forall>i < sqrt\<up> u. (list_pvEB s ! i \<longleftrightarrow> (\<exists>j < sqrt\<down> u. list_pvEB (cs!i) ! j)))"
+    (\<forall>i < sqrt\<up> u. list_pvEB s ! i \<longleftrightarrow> (\<exists>j < sqrt\<down> u. list_pvEB (cs!i) ! j))"
 
 subsection \<open>Auxiliary Lemmas\<close>
+
+lemma nat_less_induct':
+  fixes P :: "nat \<Rightarrow> bool"
+    and n :: "nat"
+  assumes "\<And>n. (\<And>m. m < n \<Longrightarrow> P m) \<Longrightarrow> P n"
+  shows "P n"
+  using assms less_induct by blast
 
 lemma low_lt_uv_high_clusters:
   assumes "invar pvEB" "i < uv pvEB" "pvEB = Node u s cs"
@@ -108,42 +115,58 @@ corollary list_pvEB_nth_high_low:
 
 subsection \<open>Build \<O>(u)\<close> (* TODO *)
 
-function (sequential) build :: "nat \<Rightarrow> pvEB" where
-  "build u = (
-    if u = 2 then
-      Leaf (replicate 2 False)
-    else
-      Node u (build (sqrt\<up> u)) (replicate (sqrt\<up> u) (build (sqrt\<down> u)))
-  )"
-  by pat_completeness auto
-termination sorry
+function (domintros) build :: "nat \<Rightarrow> pvEB" where
+  "build 2 = Leaf (replicate 2 False)"
+| "u \<noteq> 2 \<Longrightarrow> build u = Node u (build (sqrt\<up> u)) (replicate (sqrt\<up> u) (build (sqrt\<down> u)))"
+  by blast+
 
-lemma build_simps[simp]:
-  "u = 2 \<Longrightarrow> build u = Leaf (replicate 2 False)"
-  "u \<noteq> 2 \<Longrightarrow> build u = Node u (build (sqrt\<up> u)) (replicate (sqrt\<up> u) (build (sqrt\<down> u)))"
-  by simp_all
+declare build.domintros[simp] build.psimps[simp]
+
+lemma build_termination:
+  assumes "u = 2^k" "0 < k"
+  shows "build_dom u"
+  using assms
+  sorry
 
 lemma build_uv:
-  "uv (build u) = u"
-  by simp
-
-declare build.simps[simp del]
-
-lemma nat01_induct:
-  fixes n
-  assumes "P 0" "P 1" "\<And>n. 0 < n \<Longrightarrow> P n \<Longrightarrow> P (Suc n)"
-  shows "P n"
-  using assms nat_induct_non_zero by (metis gr0I)
-
-lemma build_empty:
-  assumes "u = 2^k" "0 < k" "i < u"
-  shows "\<not> list_pvEB (build u) ! i"
-  sorry
+  assumes "u = 2^k" "0 < k"
+  shows "uv (build u) = u"
+  using assms build_termination by (cases "u \<noteq> 2") simp_all
 
 lemma build_invar:
   assumes "u = 2^k" "0 < k"
   shows "invar (build u)"
   sorry
+
+lemma build_empty: 
+  assumes "u = 2^k" "0 < k" "i < u"
+  shows "\<not> list_pvEB (build u) ! i"
+  using assms
+proof (induction k arbitrary: i u rule: nat_less_induct')
+  case (1 k)
+  show ?case
+  proof (cases "k \<le> 1")
+    case True
+    hence "u = 2"
+      using "1.prems"(1,2) le_neq_implies_less power_one_right by blast
+    thus ?thesis
+      using "1.prems"(3) by simp
+  next
+    case False
+    hence "k div 2 < k" "sqrt\<down> u = 2^(k div 2)" "0 < k div 2" "low i u < sqrt\<down> u"
+      using "1.prems"(1) sqrt_floor_div2 by (auto, metis low_lt_sqrt_floor)
+    hence *: "\<not> list_pvEB (build (sqrt\<down> u)) ! (low i u)"
+      using "1.IH" by blast
+    have "u \<noteq> 2"
+      using False "1.prems"(1) \<open>0 < k div 2\<close> by (metis div_less less_2_cases_iff neq0_conv power_gt_expt)
+    hence "list_pvEB (build u) ! i = list_pvEB (replicate (sqrt\<up> u) (build (sqrt\<down> u))!(high i u)) ! (low i u)"
+      using "1.prems" list_pvEB_nth_high_low build_invar build_uv build.psimps(2) build_termination by metis
+    also have "... = list_pvEB (build (sqrt\<down> u)) ! (low i u)"
+      using "1.prems"(1,3) high_lt_k sqrt_ceiling_mul_floor by auto
+    finally show ?thesis
+      using * by blast
+  qed
+qed
 
 subsection \<open>Membership \<O>(lg lg u)\<close>
 
@@ -160,14 +183,8 @@ lemma member_termination:
   using assms
 proof (induction pvEB arbitrary: i)
   case (Node u s cs)
-  have 0: "cs!(high i u) \<in> set cs" "invar (cs!(high i u))"
-    using Node.prems(1,2) high_in_clusters by auto
-  hence 1: "low i u < uv (cs!(high i u))"
-    using low_lt_uv_high_clusters Node.prems(1,2) by blast
-  have "member_dom (cs!(high i u), low i u)"
-    using Node.IH(2)[OF 0 1] by blast
   thus ?case
-    by simp
+    using high_in_clusters low_lt_sqrt_floor by auto
 qed simp
 
 lemma member_list_pvEB_nth:
@@ -191,10 +208,7 @@ subsection \<open>Insert \<O>(lg u)\<close>
 
 function (domintros, sequential) insert :: "pvEB \<Rightarrow> nat \<Rightarrow> pvEB" where
   "insert (Leaf bs) i = Leaf (bs[i := True])"
-| "insert (Node u s cs) i = (
-    let h = high i u in
-    let l = low i u in
-    Node u (insert s h) (cs[h := insert (cs!h) l]))"
+| "insert (Node u s cs) i = Node u (insert s (high i u)) (cs[high i u := insert (cs!high i u) (low i u)])"
   by pat_completeness auto
 
 declare insert.domintros[simp] insert.psimps[simp]
@@ -205,18 +219,14 @@ lemma insert_termination:
   using assms
 proof (induction pvEB arbitrary: i)
   case (Node u s cs)
-  have "insert_dom (s, high i u)"
-    using Node.IH(1) Node.prems high_lt_uv_summary by auto
-  moreover have "insert_dom (cs!(high i u), low i u)"
-    using Node.IH(2) Node.prems by (meson high_in_clusters invar.simps(2) low_lt_uv_high_clusters)
-  ultimately show ?case
-    by simp
+  thus ?case
+    using high_lt_uv_summary low_lt_sqrt_floor by auto
 qed simp
 
 lemma insert_uv:
   assumes "invar pvEB" "i < uv pvEB"
   shows "uv (insert pvEB i) = uv pvEB"
-  using assms by (cases pvEB) (auto simp: insert_termination, meson uv.simps(2))
+  using assms by (cases pvEB) (auto simp: insert_termination)
 
 lemma insert_update:
   assumes "invar pvEB" "i < uv pvEB"
@@ -237,7 +247,7 @@ proof (induction pvEB arbitrary: i)
     using Node.prems sqrt_ceiling_mul_floor by (auto simp: sqrt_floor_def)
 
   have "list_pvEB (insert (Node u s cs) i) = concat (map list_pvEB (cs[h := insert (cs!h) l]))"
-    using defs Node.prems by (auto simp: insert_termination, meson list_pvEB.simps(2))
+    using defs Node.prems by (auto simp: insert_termination)
   also have "... = concat ((map list_pvEB cs)[h := list_pvEB (insert (cs!h) l)])"
     by (simp add: map_update)
   also have "... = concat ((map list_pvEB cs)[h := (list_pvEB (cs!h))[l := True]])"
@@ -323,44 +333,8 @@ lemma minimum_termination_uv:
   using assms
 proof (induction pvEB arbitrary: m)
   case (Node u s cs)
-  show ?case
-  proof (cases "\<exists>h. Some h = minimum s")
-    case True
-    then obtain h where h_def: "Some h = minimum s"
-      by blast
-    hence *: "minimum_dom s" "h < uv s"
-      using Node.prems Node.IH(1) by simp_all
-    have "\<And>h'. minimum s = Some h' \<Longrightarrow> minimum_dom (cs ! h')"
-    proof -
-      fix h'
-      assume "minimum s = Some h'"
-      thus "minimum_dom (cs!h')"
-        using h_def Node.prems Node.IH(2) *(2) by simp
-    qed
-    hence dom: "minimum_dom (Node u s cs)"
-      using *(1) by simp
-    show ?thesis
-    proof cases
-      assume "\<exists>l. Some l = minimum (cs!h)"
-      hence "(Some m = minimum (Node u s cs) \<longrightarrow> m < uv (Node u s cs))"
-        using Node.IH(2) Node.prems True h_def *(2) dom index_lt_u
-        by (auto split: option.splits, metis nth_mem)
-      thus ?thesis using True h_def Node
-        using dom by blast
-    next
-      assume "\<not>(\<exists>l. Some l = minimum (cs!h))"
-      thus ?thesis
-        using dom h_def by (auto split: option.splits)
-    qed
-  next
-    case False
-    hence 0: "minimum_dom (Node u s cs)"
-      using False Node.IH(1) Node.prems by (auto, metis minimum.domintros(2))
-    hence "None = minimum (Node u s cs)"
-      using False by (auto split: option.splits)
-    thus ?thesis
-      using 0 by simp
-  qed
+  thus ?case
+    by (auto split: option.splits, metis index_lt_u nth_mem)
 qed (auto split: if_splits)
 
 corollary minimum_termination:
@@ -510,7 +484,7 @@ subsubsection \<open>Predecessor \<O>(lg u lg lg u)\<close> (* symmetric to Succ
 
 subsubsection \<open>Successor \<O>(lg u lg lg u)\<close> (* TODO *)
 
-function (sequential) successor :: "pvEB \<Rightarrow> nat \<Rightarrow> nat option" where
+function (domintros, sequential) successor :: "pvEB \<Rightarrow> nat \<Rightarrow> nat option" where
   "successor (Leaf bs) i = (
     if i = 0 \<and> bs!1 then Some 1
     else None
@@ -529,7 +503,18 @@ function (sequential) successor :: "pvEB \<Rightarrow> nat \<Rightarrow> nat opt
     )
   )"
   by pat_completeness auto
-termination sorry (* TODO *)
+
+declare successor.domintros[simp] successor.psimps[simp]
+
+lemma successor_termination:
+  assumes "invar pvEB" "i < uv pvEB"
+  shows "successor_dom (pvEB, i)"
+  using assms 
+proof (induction pvEB arbitrary: i)
+  case (Node u s cs)
+  thus ?case 
+    using high_lt_uv_summary low_lt_sqrt_floor by auto
+qed simp
 
 lemma successor_uv:
   assumes "invar pvEB" "Some j = successor pvEB i" "i < uv pvEB"
@@ -545,7 +530,7 @@ proof (induction pvEB arbitrary: i j)
     using Node.IH(2)[OF 0] Node.prems(1,3) high_in_clusters by (auto simp: low_lt_sqrt_floor)
   show ?case
     using Node.prems IHs IHo high_lt_uv_summary minimum_uv index_lt_u
-    by (auto split: option.splits, metis nth_mem)
+    by (auto simp: successor_termination split: option.splits, metis nth_mem)
 qed (auto split: if_splits)
 
 lemma B:
