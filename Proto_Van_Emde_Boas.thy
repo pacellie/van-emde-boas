@@ -126,7 +126,37 @@ lemma build_termination:
   assumes "u = 2^k" "0 < k"
   shows "build_dom u"
   using assms
-  sorry
+proof (induction k arbitrary: u rule: nat_less_induct')
+  case (1 k)
+  show ?case
+  proof (cases "k \<le> 1")
+    case True
+    hence "u = 2"
+      using "1.prems"(1,2) le_neq_implies_less power_one_right by blast
+    thus ?thesis
+      by simp
+  next
+    case False
+    hence 0: "k div 2 < k" "sqrt\<down> u = 2^(k div 2)" "0 < k div 2"
+      using "1.prems" sqrt_floor_div2 by auto
+    hence 1: "u \<noteq> 2"
+      using "1.prems"(1) False by (metis div_less less_2_cases_iff less_not_refl2 power_gt_expt)
+    show ?thesis
+    proof cases
+      assume "even k"
+      hence "build_dom (sqrt\<up> u)"
+        using  "0"(1,3) "1.IH" "1.prems"(1) sqrt_ceiling_div2 by blast
+      thus ?thesis
+        using "1.IH"[OF 0] 1 by simp
+    next
+      assume "\<not> even k"
+      hence 2: "k div 2 + 1 < k" "sqrt\<up> u = 2^(k div 2 + 1)" "0 < k div 2 + 1"
+        using "0"(3) "1.prems"(1) sqrt_ceiling_div2_add1 by (presburger, auto)
+      show ?thesis
+        using "1.IH"[OF 0] 1 "1.IH"[OF 2] by simp
+    qed
+  qed
+qed
 
 lemma build_uv:
   assumes "u = 2^k" "0 < k"
