@@ -163,38 +163,51 @@ lemma build_uv:
   shows "uv (build u) = u"
   using assms build_termination by (cases "u \<noteq> 2") simp_all
 
-lemma build_invar:
+lemma build_invar_empty:
   assumes "u = 2^k" "0 < k"
-  shows "invar (build u)"
-  sorry
-
-lemma build_empty: 
-  assumes "u = 2^k" "0 < k" "i < u"
-  shows "\<not> list_pvEB (build u) ! i"
+  shows "invar (build u) \<and> (\<forall>i < u. \<not> list_pvEB (build u) ! i)"
   using assms
-proof (induction k arbitrary: i u rule: nat_less_induct')
+proof (induction k arbitrary: u rule: nat_less_induct')
   case (1 k)
+  define rep where [simp]: "rep = replicate (sqrt\<up> u) (build sqrt\<down> u)"
   show ?case
   proof (cases "k \<le> 1")
     case True
     hence "u = 2"
       using "1.prems"(1,2) le_neq_implies_less power_one_right by blast
     thus ?thesis
-      using "1.prems"(3) by simp
+      by simp
   next
     case False
-    hence "k div 2 < k" "sqrt\<down> u = 2^(k div 2)" "0 < k div 2" "low i u < sqrt\<down> u"
-      using "1.prems"(1) sqrt_floor_div2 by (auto, metis low_lt_sqrt_floor)
-    hence *: "\<not> list_pvEB (build (sqrt\<down> u)) ! (low i u)"
-      using "1.IH" by blast
-    have "u \<noteq> 2"
-      using False "1.prems"(1) \<open>0 < k div 2\<close> by (metis div_less less_2_cases_iff neq0_conv power_gt_expt)
-    hence "list_pvEB (build u) ! i = list_pvEB (replicate (sqrt\<up> u) (build (sqrt\<down> u))!(high i u)) ! (low i u)"
-      using "1.prems" list_pvEB_nth_high_low build_invar build_uv build.psimps(2) build_termination by metis
-    also have "... = list_pvEB (build (sqrt\<down> u)) ! (low i u)"
-      using "1.prems"(1,3) high_lt_k sqrt_ceiling_mul_floor by auto
-    finally show ?thesis
-      using * by blast
+    hence evenk: "k div 2 < k" "sqrt\<down> u = 2^(k div 2)" "0 < k div 2"
+      using "1.prems" sqrt_floor_div2 by auto
+    hence "u \<noteq> 2"
+      using "1.prems"(1) False by (metis div_less less_2_cases_iff less_not_refl2 power_gt_expt)
+    have IH: "\<forall>c \<in> set rep. invar c \<and> uv c = sqrt\<down> u" "\<forall>j < sqrt\<down> u. \<not> list_pvEB (build sqrt\<down> u) ! j"
+      using "1.IH"[OF evenk] evenk(2,3) build_uv by simp_all
+
+    have "invar (build (sqrt\<up> u)) \<and> (\<forall>i < sqrt\<up> u. \<not> list_pvEB (build (sqrt\<up> u)) ! i) \<and> 
+          uv (build (sqrt\<up> u)) = sqrt\<up> u"
+    proof (cases "even k")
+      case True
+      thus ?thesis
+        using evenk(1,3) "1.IH" "1.prems"(1) sqrt_ceiling_div2 build_uv by auto
+    next
+      case False
+      hence "k div 2 + 1 < k" "sqrt\<up> u = 2^(k div 2 + 1)" "0 < k div 2 + 1"
+        using evenk(3) "1.prems"(1) sqrt_ceiling_div2_add1 by (presburger, auto)
+      then show ?thesis
+        using "1.IH" build_uv by presburger
+    qed
+    hence INVAR: "invar (build u)"
+      using "1.prems" "1.IH"[OF evenk] IH False \<open>u \<noteq> 2\<close> build_termination by simp
+
+    hence "\<forall>i < u. list_pvEB (build u) ! i = list_pvEB (rep!high i u) ! low i u"
+      using \<open>u \<noteq> 2\<close> "1.prems" list_pvEB_nth_high_low build_uv build.psimps(2) build_termination rep_def by metis
+    hence "\<forall>i < u. list_pvEB (build u) ! i = list_pvEB (build (sqrt\<down> u)) ! low i u"
+      using "1.prems"(1) high_def less_mult_imp_div_less sqrt_ceiling_mul_floor by auto
+    thus ?thesis
+      using INVAR by (simp add: IH low_lt_sqrt_floor)
   qed
 qed
 
