@@ -4,6 +4,16 @@ begin
 
 section \<open>Proto van Emde Boas Tree\<close>
 
+text \<open>
+  \<^item> Idea:
+    Do not store universe size u, instead just store k since u = 2^k.
+    \<rightarrow> Simplifies Indexing.thy and eliminates lg and root operations.
+  \<^item> Extension 1:
+    Introduce satellite data.
+  \<^item> Extension 2:
+    Allow for duplicate keys.
+\<close>
+
 datatype pvEB =
   Leaf "bool list"
 | Node nat pvEB "pvEB list"
@@ -647,21 +657,93 @@ proof (induction pvEB arbitrary: i j)
   qed
 qed (auto split: if_splits)
 
-lemma D:
+lemma successor_None_partial_empty:
+  assumes "invar pvEB" "i < uv pvEB"
+  shows "(None = successor pvEB i) \<longleftrightarrow> (\<forall>j < uv pvEB. i < j \<longrightarrow> \<not> list_pvEB pvEB ! j)"
+proof standard
+  assume "None = successor pvEB i"
+  thus "\<forall>j < uv pvEB. i < j \<longrightarrow> \<not> list_pvEB pvEB ! j" using assms
+  proof (induction pvEB arbitrary: i)
+    case (Node u s cs)
+    then show ?case
+      sorry
+  qed (auto simp: less_2_cases_iff split: if_splits)
+next
+  assume *: "\<forall>j < uv pvEB. i < j \<longrightarrow> \<not> list_pvEB pvEB ! j"
+  show "None = successor pvEB i"
+  proof (rule ccontr)
+    assume "\<not> None = successor pvEB i"
+    then obtain j where "Some j = successor pvEB i"
+      by (metis not_None_eq)
+    thus False
+      using assms * successor_uv successor_lt successor_Some_nth by blast
+  qed
+qed
+
+lemma successor_None_not_nth:
   assumes "invar pvEB" "Some k = successor pvEB i" "i < uv pvEB" "i < j" "j < k"
   shows "\<not> list_pvEB pvEB ! j"
-  sorry
+  using assms
+proof (induction pvEB arbitrary: i j k)
+  case (Node u s cs)
+  show ?case
+  proof (cases "\<exists>off. Some off = successor (cs!high i u) (low i u)")
+    case True
+    then obtain off where *: "Some off = successor (cs!high i u) (low i u)"
+      by blast
+    have high: "cs!high i u \<in> set cs" "invar (cs!high i u)"
+      using Node.prems(1,3) high_in_clusters by auto
+    hence IH: "\<forall>j. low i u < j \<and> j < off \<longrightarrow> \<not> list_pvEB (cs!high i u) ! j"
+      using Node.prems Node.IH(2) * low_lt_uv_high_clusters by blast
+    have "k = index (high i u) off u"
+      using * Node.prems(1,2,3) successor_termination by (auto split: option.splits)
+    moreover have "off < sqrt\<down> u"
+      using successor_uv[OF high(2) *] low_lt_uv_high_clusters[OF Node.prems(1) Node.prems(3)]
+            Node.prems(1) high(1) by simp
+    ultimately have "high i u = high k u"
+      using index_eq_high_low(1) by auto
+    hence "high i u = high j u"
+      using Node.prems(4,5) high_mono by (metis dual_order.antisym le_eq_less_or_eq)
+    moreover have "k < uv (Node u s cs)"
+      using successor_uv Node.prems(1,2,3) by blast
+    ultimately have "list_pvEB (Node u s cs) ! j = list_pvEB (cs!high i u) ! low j u"
+      using list_pvEB_nth_high_low Node.prems(1,5) less_trans by metis
+    moreover have "low i u < low j u" "low j u < off"
+      using index_high_low index_low_mono Node.prems(4,5) \<open>high i u = high j u\<close> \<open>k = index (high i u) off u\<close>
+      by (metis not_less_iff_gr_or_eq less_imp_triv linorder_neqE_nat)+
+    ultimately show ?thesis
+      using IH by blast
+  next
+    case False
+    then obtain succ off where *: "Some succ = successor s (high i u)" "Some off = minimum (cs!succ)"
+      using Node.prems successor_termination by (auto split: option.splits)
+    hence "k = index succ off u"
+      using False * Node.prems(1,2,3) successor_termination by (auto split: option.splits)
+
+    have "high j u \<le> succ"
+      sorry
+
+    then consider (A) "high i u = high j u" | (B) "high i u < high j u" "high j u < succ" | (C) "high j u = succ"
+      using Node.prems(4) high_mono le_eq_less_or_eq by auto
+    thus ?thesis
+    proof cases
+      case A
+      then show ?thesis sorry
+    next
+      case B
+      then show ?thesis sorry
+    next
+      case C
+      then show ?thesis sorry
+    qed
+  qed
+qed (auto split: if_splits)
 
 corollary successor_is_arg_min:
   assumes "invar pvEB" "Some j = successor pvEB i" "i < uv pvEB"
   shows "is_arg_min id (\<lambda>j. list_pvEB pvEB ! j \<and> i < j \<and> (\<forall>k. i < k \<and> k < j \<longrightarrow> \<not> list_pvEB pvEB ! k)) j"
-  using assms successor_lt successor_Some_nth D unfolding is_arg_min_def by (metis id_apply)
+  using assms successor_lt successor_Some_nth successor_None_not_nth unfolding is_arg_min_def by (metis id_apply)
 
-lemma E:
-  assumes "invar pvEB" "i < uv pvEB"
-  shows "(None = successor pvEB i) \<longleftrightarrow> (\<forall>j < uv pvEB. i < j \<longrightarrow> \<not> list_pvEB pvEB ! j)"
-  sorry
-
-subsection \<open>Delete \<O>(sqrt u lg lg u)\<close> (* TODO *)
+subsection \<open>Delete \<O>(sqrt u lg lg u)\<close> (* especially slow for proto van Emde Boas trees *)
 
 end
