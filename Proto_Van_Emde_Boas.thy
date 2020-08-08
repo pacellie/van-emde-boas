@@ -113,7 +113,7 @@ corollary list_pvEB_nth_high_low:
   using list_pvEB_nth_index high_lt_sqrt_ceiling index_high_low assms
   by (metis high_lt_uv_summary invar.simps(2) low_lt_sqrt_floor)
 
-subsection \<open>Build \<O>(u)\<close> (* TODO *)
+subsection \<open>Build \<O>(u)\<close>
 
 function (domintros) build :: "nat \<Rightarrow> pvEB" where
   "build 2 = Leaf (replicate 2 False)"
@@ -362,7 +362,7 @@ function (domintros, sequential) minimum :: "pvEB \<Rightarrow> nat option" wher
       Some h \<Rightarrow> (
         case minimum (cs!h) of
           Some l \<Rightarrow> Some (index h l u)
-        | None \<Rightarrow> None
+        | None \<Rightarrow> None \<comment>\<open>impossible case, requires simultaneous proof of termination, uv, Some_nth, None_empty\<close>
       )
     | None \<Rightarrow> None
   )"
@@ -540,7 +540,7 @@ function (domintros, sequential) successor :: "pvEB \<Rightarrow> nat \<Rightarr
         Some succ \<Rightarrow> (
           case minimum (cs!succ) of
             Some offset \<Rightarrow> Some (index succ offset u)
-          | None \<Rightarrow> None
+          | None \<Rightarrow> None \<comment>\<open>impossible case\<close>
         )
       | None \<Rightarrow> None
     )
@@ -576,25 +576,86 @@ proof (induction pvEB arbitrary: i j)
     by (auto simp: successor_termination split: option.splits, metis nth_mem)
 qed (auto split: if_splits)
 
-lemma B:
+lemma successor_lt:
   assumes "invar pvEB" "Some j = successor pvEB i" "i < uv pvEB"
   shows "i < j"
-  sorry
+  using assms
+proof (induction pvEB arbitrary: i j)
+  case (Node u s cs)
+  show ?case
+  proof (cases "\<exists>off. Some off = successor (cs!high i u) (low i u)")
+    case True
+    then obtain off where *: "Some off = successor (cs!high i u) (low i u)"
+      by blast
+    have "cs!high i u \<in> set cs" "invar (cs!high i u)"
+      using Node.prems(1,3) high_in_clusters by auto
+    hence "low i u < off"
+      using Node.prems Node.IH(2) * successor_uv low_lt_uv_high_clusters by blast
+    hence "i < index (high i u) off u"
+      using index_high_low index_low_mono by metis
+    thus ?thesis
+      using * Node.prems successor_termination by (auto split: option.splits)
+  next
+    case False
+    then obtain succ off where *: "Some succ = successor s (high i u)" "Some off = minimum (cs!succ)"
+      using Node.prems successor_termination by (auto split: option.splits)
+    hence "high i u < succ"
+      using Node.IH(1) Node.prems(1,3) high_lt_uv_summary by auto
+    hence "i < index succ off u"
+      using index_high_low index_mono low_lt_sqrt_floor by metis
+    then show ?thesis
+      using False * Node.prems successor_termination by (auto split: option.splits)
+  qed
+qed (auto split: if_splits)
 
-lemma C:
+lemma successor_Some_nth:
   assumes "invar pvEB" "Some j = successor pvEB i" "i < uv pvEB"
   shows "list_pvEB pvEB ! j"
-  sorry
+  using assms
+proof (induction pvEB arbitrary: i j)
+  case (Node u s cs)
+  show ?case
+  proof (cases "\<exists>off. Some off = successor (cs!high i u) (low i u)")
+    case True
+    then obtain off where *: "Some off = successor (cs!high i u) (low i u)"
+      by blast
+    have high: "cs!high i u \<in> set cs" "invar (cs!high i u)"
+      using Node.prems(1,3) high_in_clusters by auto
+    hence IH: "list_pvEB (cs!high i u) ! off"
+      using Node.prems Node.IH(2) * low_lt_uv_high_clusters by blast
+    have "off < sqrt\<down> u"
+      using successor_uv[OF high(2) *] low_lt_uv_high_clusters[OF Node.prems(1) Node.prems(3)]
+            Node.prems(1) high(1) by simp
+    moreover have "j = index (high i u) off u"
+      using * Node.prems successor_termination by (auto split: option.splits)
+    ultimately have "list_pvEB (Node u s cs) ! j = list_pvEB (cs!high i u) ! off"
+      using Node.prems index_eq_high_low list_pvEB_nth_high_low successor_uv by metis
+    thus ?thesis
+      using IH by blast
+  next
+    case False
+    then obtain succ off where *: "Some succ = successor s (high i u)" "Some off = minimum (cs!succ)"
+      using Node.prems successor_termination by (auto split: option.splits)
+    hence "list_pvEB (cs!succ) ! off"
+      using minimum_Some_nth Node.prems(1,3) high_lt_uv_summary successor_uv[OF _ *(1)] by auto
+    have "list_pvEB (Node u s cs) ! j = list_pvEB (Node u s cs) ! index succ off u"
+      using False * Node.prems successor_termination by (auto split: option.splits)
+    also have "... = list_pvEB (cs!succ) ! off"
+      using list_pvEB_nth_index successor_uv[OF _ *(1)] minimum_uv[OF _ *(2)] Node.prems(1,3) high_lt_uv_summary by auto
+    finally show ?thesis
+      using \<open>list_pvEB (cs!succ) ! off\<close> by blast
+  qed
+qed (auto split: if_splits)
 
 lemma D:
-  assumes "invar pvEB" "Some j = successor pvEB i" "i < uv pvEB" "i < k" "k < j"
-  shows "\<not> list_pvEB pvEB ! k"
+  assumes "invar pvEB" "Some k = successor pvEB i" "i < uv pvEB" "i < j" "j < k"
+  shows "\<not> list_pvEB pvEB ! j"
   sorry
 
 corollary successor_is_arg_min:
   assumes "invar pvEB" "Some j = successor pvEB i" "i < uv pvEB"
   shows "is_arg_min id (\<lambda>j. list_pvEB pvEB ! j \<and> i < j \<and> (\<forall>k. i < k \<and> k < j \<longrightarrow> \<not> list_pvEB pvEB ! k)) j"
-  using assms B C D unfolding is_arg_min_def by (metis id_apply)
+  using assms successor_lt successor_Some_nth D unfolding is_arg_min_def by (metis id_apply)
 
 lemma E:
   assumes "invar pvEB" "i < uv pvEB"

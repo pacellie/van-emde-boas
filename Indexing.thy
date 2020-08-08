@@ -91,6 +91,10 @@ lemma index_eq_high_low:
   shows "h = high i u" "l = low i u"
   using assms unfolding index_def high_def low_def by auto
 
+lemma index_low_mono:
+  "j < k \<Longrightarrow> index i j u < index i k u"
+  unfolding index_def by simp
+
 lemma high_mono:
   "i \<le> j \<Longrightarrow> high i u \<le> high j u"
   unfolding high_def using div_le_mono by blast
@@ -110,6 +114,10 @@ lemma high_lt_k:
 lemma high_geq_index_h0:
   "index h 0 u \<le> i \<Longrightarrow> h \<le> high i u"
   unfolding index_def high_def sqrt_floor_def using nat_le_iff_add by auto
+
+lemma index_mono:
+  "i < k \<Longrightarrow> j < sqrt\<down> u \<Longrightarrow> index i j u < index k l u"
+  unfolding index_def using mult_le_mono1[of "i+1" k "sqrt\<down> u"] discrete by simp
 
 lemma index_lt_u:
   assumes "u = 2^k" "i < sqrt\<up> u" "j < sqrt\<down> u"
