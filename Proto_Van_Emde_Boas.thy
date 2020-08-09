@@ -612,7 +612,7 @@ proof (induction pvEB arbitrary: i j)
     hence "high i u < succ"
       using Node.IH(1) Node.prems(1,3) high_lt_uv_summary by auto
     hence "i < index succ off u"
-      using index_high_low index_mono low_lt_sqrt_floor by metis
+      using index_high_low index_high_mono low_lt_sqrt_floor by metis
     then show ?thesis
       using False * Node.prems successor_termination by (auto split: option.splits)
   qed

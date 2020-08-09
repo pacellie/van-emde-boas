@@ -1,4 +1,4 @@
-session "Van_Emde_Boas" (AFP) = "HOL-Library" +
+session "Van_Emde_Boas" = "HOL-Library" +
   options [timeout = 600]
   theories
     Indexing
