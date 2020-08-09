@@ -5,12 +5,12 @@ begin
 section \<open>Proto van Emde Boas Tree\<close>
 
 text \<open>
-  \<^item> Idea:
+  \<^item> Extension 1:
     Do not store universe size u, instead just store k since u = 2^k.
     \<rightarrow> Simplifies Indexing.thy and eliminates lg and root operations.
-  \<^item> Extension 1:
-    Introduce satellite data.
   \<^item> Extension 2:
+    Introduce satellite data.
+  \<^item> Extension 3:
     Allow for duplicate keys.
 \<close>
 
@@ -661,13 +661,60 @@ lemma successor_None_partial_empty:
   assumes "invar pvEB" "i < uv pvEB"
   shows "(None = successor pvEB i) \<longleftrightarrow> (\<forall>j < uv pvEB. i < j \<longrightarrow> \<not> list_pvEB pvEB ! j)"
 proof standard
-  assume "None = successor pvEB i"
-  thus "\<forall>j < uv pvEB. i < j \<longrightarrow> \<not> list_pvEB pvEB ! j" using assms
-  proof (induction pvEB arbitrary: i)
-    case (Node u s cs)
-    then show ?case
-      sorry
-  qed (auto simp: less_2_cases_iff split: if_splits)
+  assume None: "None = successor pvEB i"
+  show "\<forall>j < uv pvEB. i < j \<longrightarrow> \<not> list_pvEB pvEB ! j"
+  proof (standard, standard, standard)
+    fix j
+    assume "j < uv pvEB" "i < j"
+    thus "\<not> list_pvEB pvEB ! j" using assms None
+    proof (induction pvEB arbitrary: i j)
+      case (Node u s cs)
+      show ?case
+      proof (cases "\<exists>succ. Some succ = successor s (high i u)")
+        case True
+        then obtain succ where succ_def: "Some succ = successor s (high i u)"
+          by blast
+        have 0: "high i u < uv s"
+          using Node.prems(3,4) high_lt_uv_summary by blast
+        hence "list_pvEB s ! succ"
+          using Node.prems(3) succ_def successor_Some_nth by auto
+        hence 1: "\<exists>i < sqrt\<down> u. list_pvEB (cs!succ) ! i"
+          using Node.prems(3) 0 succ_def successor_uv by fastforce
+        have "None = minimum (cs!succ)"
+          using succ_def Node.prems successor_termination by (auto split: option.splits)
+        hence "\<forall>i < sqrt\<down> u. \<not> list_pvEB (cs!succ) ! i"
+          using minimum_None_empty 0 Node.prems(3) succ_def successor_uv by force
+        thus ?thesis
+          using 1 by blast
+      next
+        case False
+        show ?thesis
+        proof cases
+          assume "high j u \<le> high i u"
+          hence *: "high j u = high i u"
+            using Node.prems(2) high_mono by (simp add: dual_order.antisym less_imp_le_nat)
+          have "None = successor (cs!high i u) (low i u)"
+            using Node.prems successor_termination by (auto split: option.splits)
+          moreover have "low i u < low j u"
+            using index_high_low index_low_mono * Node.prems(2) by (metis not_less_iff_gr_or_eq)
+          moreover have "low j u < uv (cs!high i u)"
+            using low_lt_uv_high_clusters Node.prems(1,3) * by metis
+          ultimately have "\<not> list_pvEB (cs!high i u) ! low j u"
+            using Node.IH(2) Node.prems(3,4) high_in_clusters by auto
+          thus ?thesis
+            using Node.prems(1,3) list_pvEB_nth_high_low * by presburger
+        next
+          assume *: "\<not> high j u \<le> high i u"
+          have "None = successor s (high i u)"
+            using False by (metis not_Some_eq)
+          hence "\<forall>j < uv s. \<forall>k < sqrt\<down> u. high i u < j \<longrightarrow> \<not> list_pvEB (cs!j) ! k"
+            using Node.IH(1) Node.prems(1,3) by auto
+          thus ?thesis using * Node.prems(1,3)
+            by (meson high_lt_uv_summary list_pvEB_nth_high_low low_lt_sqrt_floor le_less_linear)
+        qed
+      qed
+    qed (auto simp: less_2_cases_iff split: if_splits)
+  qed
 next
   assume *: "\<forall>j < uv pvEB. i < j \<longrightarrow> \<not> list_pvEB pvEB ! j"
   show "None = successor pvEB i"
@@ -728,7 +775,8 @@ proof (induction pvEB arbitrary: i j k)
     thus ?thesis
     proof cases
       case A
-      then show ?thesis sorry
+      then show ?thesis
+        using False successor_None_partial_empty sorry
     next
       case B
       then show ?thesis sorry
