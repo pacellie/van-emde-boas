@@ -6,10 +6,10 @@ section \<open>Proto van Emde Boas Tree\<close>
 
 text \<open>
   \<^item> Extension 1:
+    Introduce satellite data.
+  \<^item> Extension 2:
     Do not store universe size u, instead just store k since u = 2^k.
     \<rightarrow> Simplifies Indexing.thy and eliminates lg and root operations.
-  \<^item> Extension 2:
-    Introduce satellite data.
   \<^item> Extension 3:
     Allow for duplicate keys.
 \<close>
@@ -535,7 +535,7 @@ subsection \<open>Predecessor and Successor\<close>
 
 subsubsection \<open>Predecessor \<O>(lg u lg lg u)\<close> (* symmetric to Successor *)
 
-subsubsection \<open>Successor \<O>(lg u lg lg u)\<close> (* TODO *)
+subsubsection \<open>Successor \<O>(lg u lg lg u)\<close>
 
 function (domintros, sequential) successor :: "pvEB \<Rightarrow> nat \<Rightarrow> nat option" where
   "successor (Leaf bs) i = (
@@ -765,24 +765,58 @@ proof (induction pvEB arbitrary: i j k)
     then obtain succ off where *: "Some succ = successor s (high i u)" "Some off = minimum (cs!succ)"
       using Node.prems successor_termination by (auto split: option.splits)
     hence "k = index succ off u"
-      using False * Node.prems(1,2,3) successor_termination by (auto split: option.splits)
-
-    have "high j u \<le> succ"
-      sorry
-
+      using False Node.prems(1,2,3) successor_termination by (auto split: option.splits)
+    moreover have "off < sqrt\<down> u"
+      using minimum_uv[OF _ *(2)] successor_uv[OF _ *(1)] Node.prems(1,3) high_lt_uv_summary by auto
+    ultimately have "succ = high k u"
+      using index_eq_high_low(1) by blast
+    hence "high j u \<le> succ"
+      using Node.prems(5) high_mono by auto
     then consider (A) "high i u = high j u" | (B) "high i u < high j u" "high j u < succ" | (C) "high j u = succ"
       using Node.prems(4) high_mono le_eq_less_or_eq by auto
     thus ?thesis
     proof cases
       case A
-      then show ?thesis
-        using False successor_None_partial_empty sorry
+      have "None = successor (cs!high i u) (low i u)"
+        using False by (metis option.exhaust)
+      hence empty: "\<forall>j < uv (cs!high i u). low i u < j \<longrightarrow> \<not> list_pvEB (cs!high i u) ! j"
+        using successor_None_partial_empty Node.prems(1,3) high_in_clusters by auto
+      have "j < uv (Node u s cs)"
+        using Node.prems(1-3,5) less_trans successor_uv by blast
+      hence "list_pvEB (Node u s cs) ! j = list_pvEB (cs!high i u) ! (low j u)"
+        using list_pvEB_nth_high_low Node.prems(1) A by metis
+      moreover have "low i u < low j u"
+        using A Node.prems(4) index_high_low index_low_mono by (metis not_less_iff_gr_or_eq)
+      moreover have "low j u < uv (cs!high i u)"
+        using A Node.prems(1) \<open>j < uv (Node u s cs)\<close> low_lt_uv_high_clusters by auto
+      ultimately show ?thesis
+        using empty by blast
     next
       case B
-      then show ?thesis sorry
+      hence "\<not> list_pvEB s ! high j u"
+        using Node.IH(1)[OF _ *(1)] Node.prems(1,3) high_lt_uv_summary by auto
+      moreover have "high j u < sqrt\<up> u"
+        using successor_uv[OF _ *(1)] B(2) Node.prems(1) Node.prems(3) high_lt_uv_summary by auto
+      ultimately have "\<forall>i < sqrt\<down> u. \<not> list_pvEB (cs!high j u) ! i"
+        using Node.prems(1) by simp
+      moreover have "low j u < sqrt\<down> u"
+        by (simp add: low_lt_sqrt_floor)
+      ultimately show ?thesis
+        using Node.prems(1) \<open>high j u < sqrt\<up> u\<close> index_high_low list_pvEB_nth_index by metis
     next
       case C
-      then show ?thesis sorry
+      have "invar (cs!succ)"
+        using successor_uv[OF _ *(1)] Node.prems(1,3) high_lt_uv_summary by auto
+      hence empty: "\<forall>i < off. \<not> list_pvEB (cs!succ) ! i"
+        using minimum_Some_not_nth *(2) by blast
+      have "k < uv (Node u s cs)"
+        using successor_uv Node.prems(1,2,3) by blast
+      hence "list_pvEB (Node u s cs) ! j = list_pvEB (cs!succ) ! low j u"
+        using list_pvEB_nth_high_low Node.prems(1,5) less_trans C by blast
+      moreover have "low j u < off"
+        using C Node.prems(5) \<open>k = index succ off u\<close> index_high_low index_low_mono by (metis less_imp_triv nat_neq_iff)
+      ultimately show ?thesis
+        using empty by blast
     qed
   qed
 qed (auto split: if_splits)
@@ -792,6 +826,6 @@ corollary successor_is_arg_min:
   shows "is_arg_min id (\<lambda>j. list_pvEB pvEB ! j \<and> i < j \<and> (\<forall>k. i < k \<and> k < j \<longrightarrow> \<not> list_pvEB pvEB ! k)) j"
   using assms successor_lt successor_Some_nth successor_None_not_nth unfolding is_arg_min_def by (metis id_apply)
 
-subsection \<open>Delete \<O>(sqrt u lg lg u)\<close> (* especially slow for proto van Emde Boas trees *)
+subsection \<open>Delete \<O>(sqrt u lg lg u)\<close> (* slow for proto van Emde Boas trees *)
 
 end
